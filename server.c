@@ -1,49 +1,52 @@
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h> // read(), write(), close()
 
 #define BUFFER_SIZE 128
 #define PORT 8080
 
-// handle client messages
-void handleMessage(int connfd) {
+// NOTE: you have to use *args because of the way that you call arguments when
+// making a new thread
+void *handleClient(void *arg) {
+  int connfd = *(int *)arg;
+  free(arg); // Free the dynamically allocated memory for connfd
   char buffer[BUFFER_SIZE];
-  int bytesRead;
 
   while (1) {
-
-    // read the message and print it out
-    bytesRead = read(connfd, buffer, sizeof(buffer));
+    // Read the message from the client
+    ssize_t bytesRead = read(connfd, buffer, sizeof(buffer) - 1);
     if (bytesRead <= 0) {
-      printf("Client disconnected or error occurred\n");
+      if (bytesRead == 0) {
+        printf("Client disconnected...\n");
+      } else {
+        perror("Error reading from client");
+      }
       break;
-    } else {
-      printf("Received %d bytes\n", bytesRead);
     }
 
-    buffer[bytesRead] = '\0'; // ensure the string is null-terminated
+    buffer[bytesRead] = '\0'; // Ensure null-termination
     printf("Client said: %s\n", buffer);
-    bzero(buffer, BUFFER_SIZE);
 
-    // reply to the client
+    // Reply to the client
     const char *response = "I got your message\n";
-    strncpy(buffer, response, BUFFER_SIZE - 1);
-    buffer[BUFFER_SIZE - 1] = '\0'; // ensure null termination
+    write(connfd, response, strlen(response));
 
-    // send the response back to the client
-    write(connfd, buffer, strlen(buffer));
-
-    // exit if client wishes to
-    if (strncmp("exit", buffer, 4) == 0) {
-      printf("Server Exit...\n");
+    // Exit if the client sends "exit"
+    if (strncmp(buffer, "exit", 4) == 0) {
+      printf("Client requested disconnection.\n");
       break;
     }
   }
+
+  close(connfd);
+  pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[]) {
@@ -83,19 +86,35 @@ int main(int argc, char *argv[]) {
   } else {
     printf("listening... \n");
   }
-  socklen_t clientAddrSize = sizeof(clientaddr);
 
-  // accept
-  int connfd = accept(sockfd, (struct sockaddr *)&clientaddr, &clientAddrSize);
-  if (connfd == -1) {
-    printf("Failed to accept request... \n ");
-    exit(1);
-  } else {
-    printf("Accepted request \n");
+  // create a new thread for each client
+  while (1) {
+    // accept
+    socklen_t clientAddrSize = sizeof(clientaddr);
+    int *connfd = malloc(sizeof(int));
+    *connfd = accept(sockfd, (struct sockaddr *)&clientaddr, &clientAddrSize);
+
+    if (*connfd == -1) {
+      printf("Failed to accept request... \n ");
+      free(connfd);
+      continue;
+    }
+    printf("Accepted connection \n");
+
+    // create thread
+    pthread_t thread_id;
+    int threadErr = pthread_create(&thread_id, NULL, *handleClient, connfd);
+
+    if (threadErr != 0) {
+      perror("failed to create thread...");
+      free(connfd);
+      continue;
+    } else {
+      printf("Created thread for client...\n ");
+    }
+
+    // to avoid memory leaks
+    pthread_detach(thread_id);
   }
-
-  // handle clients messages
-  handleMessage(connfd);
-
   return 0;
 }
