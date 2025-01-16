@@ -11,6 +11,39 @@
 
 #define BUFFER_SIZE 128
 #define PORT 8080
+#define MAX_CLIENTS 100
+
+// NOTE: client list is global so a mutex will be used
+struct clientData {
+  char client_name[BUFFER_SIZE];
+  int connfd;
+};
+
+struct clientData *clients[MAX_CLIENTS];
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// client handling
+void addClient(struct clientData *client) {
+  pthread_mutex_lock(&clients_mutex);
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i] == NULL) {
+      clients[i] = client;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&clients_mutex);
+}
+
+void removeClient(struct clientData *client) {
+  pthread_mutex_lock(&clients_mutex);
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i] == client) {
+      clients[i] = NULL;
+      break;
+    }
+  }
+  pthread_mutex_unlock(&clients_mutex);
+}
 
 // NOTE: you have to use *args because of the way that you call arguments when
 // making a new thread
@@ -34,14 +67,35 @@ void *handleClient(void *arg) {
     buffer[bytesRead] = '\0'; // Ensure null-termination
     printf("Client said: %s\n", buffer);
 
-    // Reply to the client
-    const char *response = "I got your message\n";
-    write(connfd, response, strlen(response));
+    // check if the client wants a name
+    const char *REQUEST = "REQUEST_NAME: ";
+    int wantsName = strncmp(REQUEST, buffer, strlen(REQUEST));
+    if (wantsName == 0) {
+      // create client struct
+      struct clientData client = {};
+      strcpy(client.client_name, buffer);
+      client.connfd = connfd;
 
-    // Exit if the client sends "exit"
-    if (strncmp(buffer, "exit", 4) == 0) {
-      printf("Client requested disconnection.\n");
-      break;
+      // add name to the clientlist
+      addClient(&client);
+
+      // Tell the client they got their name
+      const char *response = "You are the name you wanted: ";
+      char result[BUFFER_SIZE + 50] = {0};
+      snprintf(result, BUFFER_SIZE + 50, "%s %s", response, client.client_name);
+
+      write(connfd, result, strlen(result));
+
+    } else {
+      // Reply to the client
+      const char *response = "I got your message\n";
+      write(connfd, response, strlen(response));
+
+      // Exit if the client sends "exit"
+      if (strncmp(buffer, "exit", 4) == 0) {
+        printf("Client requested disconnection.\n");
+        break;
+      }
     }
   }
 

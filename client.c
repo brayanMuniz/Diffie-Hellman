@@ -11,6 +11,14 @@
 #define BUFFER_SIZE 128
 #define PORT 8080
 
+int requestName(int sockfd, const char *name) {
+  char nameMessage[BUFFER_SIZE];
+  snprintf(nameMessage, BUFFER_SIZE, "REQUEST_NAME: %s", name);
+
+  ssize_t bytesWritten = write(sockfd, nameMessage, strlen(nameMessage));
+  return bytesWritten;
+}
+
 void handleMessage(int sockfd) {
   char buffer[BUFFER_SIZE];
 
@@ -63,6 +71,12 @@ void handleMessage(int sockfd) {
 }
 
 int main(int argc, char *argv[]) {
+  // make sure the client name was passed in
+  if (argc != 2) {
+    printf("Enter a name for the client\n");
+    exit(1);
+  }
+
   // create the socket
   int sockfd;
   sockfd = socket(AF_INET, SOCK_STREAM, 0); // domain, type, protocol
@@ -88,6 +102,13 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
   } else {
     printf("connected to the server\n");
+  }
+
+  // send request to have the name
+  int reqNameErr = requestName(sockfd, argv[1]);
+  if (reqNameErr == -1) {
+    perror("Error assigning name, try again with a diffirent name\n");
+    exit(1);
   }
 
   // talk to the server
