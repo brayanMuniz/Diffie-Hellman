@@ -45,8 +45,6 @@ void removeClient(struct clientData *client) {
   pthread_mutex_unlock(&clients_mutex);
 }
 
-// NOTE: you have to use *args because of the way that you call arguments when
-// making a new thread
 void *handleClient(void *arg) {
   int connfd = *(int *)arg;
   free(arg); // Free the dynamically allocated memory for connfd
@@ -71,9 +69,14 @@ void *handleClient(void *arg) {
     const char *REQUEST = "REQUEST_NAME: ";
     int wantsName = strncmp(REQUEST, buffer, strlen(REQUEST));
     if (wantsName == 0) {
+      // extract name and add it to the struct
+      char name[10];
+      strncpy(name, buffer + strlen(REQUEST), 5);
+      name[9] = '\0';
+
       // create client struct
       struct clientData client = {};
-      strcpy(client.client_name, buffer);
+      strcpy(client.client_name, name);
       client.connfd = connfd;
 
       // add name to the clientlist
@@ -83,7 +86,6 @@ void *handleClient(void *arg) {
       const char *response = "You are the name you wanted: ";
       char result[BUFFER_SIZE + 50] = {0};
       snprintf(result, BUFFER_SIZE + 50, "%s %s", response, client.client_name);
-
       write(connfd, result, strlen(result));
 
     } else {

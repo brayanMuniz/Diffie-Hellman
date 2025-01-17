@@ -12,11 +12,25 @@
 #define PORT 8080
 
 int requestName(int sockfd, const char *name) {
-  char nameMessage[BUFFER_SIZE];
-  snprintf(nameMessage, BUFFER_SIZE, "REQUEST_NAME: %s", name);
+  char buffer[BUFFER_SIZE];
+  snprintf(buffer, BUFFER_SIZE, "REQUEST_NAME: %s", name);
 
-  ssize_t bytesWritten = write(sockfd, nameMessage, strlen(nameMessage));
-  return bytesWritten;
+  ssize_t bytesWritten = write(sockfd, buffer, strlen(buffer));
+  if (bytesWritten == -1) {
+    perror("Error requesting name to server\n");
+    return -1;
+  }
+
+  // Receive the server's response
+  bzero(buffer, BUFFER_SIZE);
+  ssize_t bytesRead = read(sockfd, buffer, BUFFER_SIZE - 1);
+  if (bytesRead == -1) {
+    perror("Error reading response from server");
+    return -1;
+  }
+  printf("Server: %s\n", buffer);
+
+  return 0;
 }
 
 void handleMessage(int sockfd) {
