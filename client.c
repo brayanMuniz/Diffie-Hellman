@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,15 +29,42 @@ int requestName(int sockfd, const char *name) {
     perror("Error reading response from server");
     return -1;
   }
-  printf("Server: %s\n", buffer);
+  printf("\nSERVER NAME REQUEST: %s\n", buffer);
 
   return 0;
+}
+
+void *receiveMessages(void *arg) {
+  int sockfd = *(int *)arg;
+  char buffer[BUFFER_SIZE];
+
+  while (1) {
+    bzero(buffer, BUFFER_SIZE);
+    ssize_t bytesRead = read(sockfd, buffer, BUFFER_SIZE - 1);
+
+    if (bytesRead <= 0) {
+      if (bytesRead == 0) {
+        printf("Server closed the connection.\n");
+      } else {
+        perror("Error reading from server");
+      }
+      break;
+    }
+
+    buffer[bytesRead] = '\0'; // Ensure null-termination
+    if (bytesRead > 0) {
+      printf("\n%s\n", buffer); // Print server message
+    }
+    fflush(stdout); // Ensure the prompt appears immediately
+  }
+
+  pthread_exit(NULL);
 }
 
 void handleMessage(int sockfd) {
   char buffer[BUFFER_SIZE];
 
-  printf("Type your messages. Type 'exit' to disconnect.\n");
+  printf("Type your messages. 'exit' to disconnect.\n");
 
   while (1) {
     // Get user input
@@ -64,21 +92,6 @@ void handleMessage(int sockfd) {
       printf("Disconnecting from server...\n");
       break;
     }
-
-    // Receive the server's response
-    bzero(buffer, BUFFER_SIZE);
-    ssize_t bytesRead = read(sockfd, buffer, BUFFER_SIZE - 1);
-    if (bytesRead <= 0) {
-      if (bytesRead == 0) {
-        printf("Server closed the connection.\n");
-      } else {
-        perror("Error reading response from server");
-      }
-      break;
-    }
-
-    buffer[bytesRead] = '\0'; // Ensure null-termination
-    printf("Server: %s\n", buffer);
   }
 
   close(sockfd); // Close the socket after exiting the loop
@@ -125,8 +138,17 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  pthread_t recvThread;
+  if (pthread_create(&recvThread, NULL, receiveMessages, &sockfd) != 0) {
+    perror("Failed to create receive thread");
+    exit(1);
+  }
+
   // talk to the server
-  handleMessage(sockfd); // NOTE: have to use sockfd
+  handleMessage(sockfd);
+
+  pthread_cancel(recvThread);
+  pthread_join(recvThread, NULL); // Wait for the receive thread to finish
 
   return EXIT_SUCCESS;
 }
